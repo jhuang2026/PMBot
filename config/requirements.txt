@@ -1,0 +1,33 @@
+streamlit>=1.28.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+typing-extensions>=4.0.0
+
+# HTTP client for container-optimized LLM connections
+httpx>=0.24.0
+urllib3>=1.26.0
+
+# LangChain for conversation memory and LLM integration
+langchain>=0.1.0
+langchain-openai>=0.1.0
+langchain-core>=0.1.0
+
+# Atlassian API integration
+atlassian-python-api>=3.41.0
+st-tiny-editor
+markdown
+beautifulsoup4>=4.12.0
+
+# RAG and Vector Database dependencies
+# Note: faiss-cpu may require SWIG on some systems
+# On macOS: brew install swig
+# On Ubuntu/Debian: apt-get install swig
+# On RHEL/CentOS: yum install swig
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.0
+numpy>=1.21.0
+
+# PDF processing fallbacks (only one is needed)
+PyPDF2>=3.0.0
+

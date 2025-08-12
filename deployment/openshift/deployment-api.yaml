@@ -1,0 +1,152 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pm-chatbot-api
+  namespace: pm-chatbot
+  labels:
+    app: pm-chatbot
+    component: api
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pm-chatbot
+      component: api
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: pm-chatbot
+        component: api
+        version: v1
+    spec:
+      containers:
+      - name: api
+        image: quay.io/rh-ee-jashuang/pm-chatbot-api:latest
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        env:
+        - name: JIRA_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: JIRA_URL
+        - name: JIRA_PERSONAL_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: JIRA_PERSONAL_TOKEN
+        - name: MAAS_DEEPSEEK_R1_QWEN_14B_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-deepseek-r1-qwen-14b-api-key
+        - name: MAAS_DEEPSEEK_R1_QWEN_14B_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-deepseek-r1-qwen-14b-base-url
+        - name: MAAS_DEEPSEEK_R1_QWEN_14B_MODEL_NAME
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-deepseek-r1-qwen-14b-model-name
+        - name: MAAS_PHI_4_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-phi-4-api-key
+        - name: MAAS_PHI_4_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-phi-4-base-url
+        - name: MAAS_PHI_4_MODEL_NAME
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-phi-4-model-name
+        - name: MAAS_GRANITE_3_3_8B_INSTRUCT_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-granite-3-3-8b-instruct-api-key
+        - name: MAAS_GRANITE_3_3_8B_INSTRUCT_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-granite-3-3-8b-instruct-base-url
+        - name: MAAS_GRANITE_3_3_8B_INSTRUCT_MODEL_NAME
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-granite-3-3-8b-instruct-model-name
+        - name: MAAS_LLAMA_4_SCOUT_17B_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-llama-4-scout-17b-api-key
+        - name: MAAS_LLAMA_4_SCOUT_17B_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-llama-4-scout-17b-base-url
+        - name: MAAS_LLAMA_4_SCOUT_17B_MODEL_NAME
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-llama-4-scout-17b-model-name
+        - name: MAAS_MISTRAL_SMALL_24B_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-mistral-small-24b-api-key
+        - name: MAAS_MISTRAL_SMALL_24B_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-mistral-small-24b-base-url
+        - name: MAAS_MISTRAL_SMALL_24B_MODEL_NAME
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-mistral-small-24b-model-name
+        - name: ENVIRONMENT
+          value: "development"
+        - name: AUTH_METHOD
+          value: "simple"
+        - name: LLM_REQUEST_TIMEOUT
+          value: "120"
+        # Hugging Face cache directory settings for OpenShift compatibility
+        - name: HF_HOME
+          value: "/tmp/.cache/huggingface"
+        - name: TRANSFORMERS_CACHE
+          value: "/tmp/.cache/huggingface/transformers"
+        - name: HF_DATASETS_CACHE
+          value: "/tmp/.cache/huggingface/datasets"
+        - name: SENTENCE_TRANSFORMERS_HOME
+          value: "/tmp/.cache/sentence_transformers"
+        - name: TORCH_HOME
+          value: "/tmp/.cache/torch"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 10

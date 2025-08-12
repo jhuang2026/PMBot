@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # PM Chatbot API Server with MCP support
+  pmbot-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      - JIRA_URL=${JIRA_URL}
+      - JIRA_PERSONAL_TOKEN=${JIRA_PERSONAL_TOKEN}
+      - MAAS_API_KEY=${MAAS_API_KEY}
+      - MAAS_BASE_URL=${MAAS_BASE_URL}
+      - MAAS_MODEL_NAME=${MAAS_MODEL_NAME}
+      - ENVIRONMENT=production
+      - AUTH_METHOD=simple
+      - LOG_LEVEL=info
+    volumes:
+      - ./documents:/app/documents:ro
+      - vector_db:/app/vector_db
+      - document_cache:/app/document_cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - pmbot-network
+
+  # Optional: PM Chatbot Streamlit UI (existing)
+  pmbot-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit.optimized
+    ports:
+      - "8501:8501"
+    environment:
+      - JIRA_URL=${JIRA_URL}
+      - JIRA_PERSONAL_TOKEN=${JIRA_PERSONAL_TOKEN}
+      - MAAS_API_KEY=${MAAS_API_KEY}
+      - MAAS_BASE_URL=${MAAS_BASE_URL}
+      - MAAS_MODEL_NAME=${MAAS_MODEL_NAME}
+      # Point UI to use API server for backend operations
+      - API_SERVER_URL=http://pmbot-api:8000
+    volumes:
+      - ./documents:/app/documents:ro
+      - vector_db:/app/vector_db
+      - document_cache:/app/document_cache
+    depends_on:
+      pmbot-api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - pmbot-network
+
+  # Load balancer for production (optional)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/ssl:ro
+    depends_on:
+      - pmbot-api
+      - pmbot-ui
+    restart: unless-stopped
+    networks:
+      - pmbot-network
+    profiles:
+      - production
+
+networks:
+  pmbot-network:
+    driver: bridge
+
+volumes:
+  vector_db:
+    driver: local
+  document_cache:
+    driver: local

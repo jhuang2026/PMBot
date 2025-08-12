@@ -1,0 +1,33 @@
+[global]
+# Development mode should be false in production
+developmentMode = false
+
+[server]
+# Enable CORS for container environments
+enableCORS = false
+enableXsrfProtection = false
+
+# File watcher settings for containers
+fileWatcherType = "none"
+runOnSave = false
+
+# Session state configuration for container reliability
+maxUploadSize = 200
+maxMessageSize = 200
+
+# Browser settings
+headless = true
+
+# Session management
+sessionStateRerunMode = "strict"
+
+[browser]
+# Disable automatic opening in containers
+gatherUsageStats = false
+serverAddress = "0.0.0.0"
+
+# Session state settings for container environments
+[client]
+# Improve session state reliability
+showErrorDetails = true
+toolbarMode = "minimal" 

@@ -1,0 +1,262 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pm-chatbot-deployment
+  namespace: pm-chatbot
+  labels:
+    app: pm-chatbot
+    app.kubernetes.io/component: application
+    app.kubernetes.io/instance: pm-chatbot-instance
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: pm-chatbot
+    app.kubernetes.io/part-of: pm-chatbot
+    app.kubernetes.io/version: 1.0.0
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  selector:
+    matchLabels:
+      app: pm-chatbot
+      app.kubernetes.io/component: application
+      app.kubernetes.io/instance: pm-chatbot-instance
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/name: pm-chatbot
+      app.kubernetes.io/part-of: pm-chatbot
+      app.kubernetes.io/version: 1.0.0
+  template:
+    metadata:
+      labels:
+        app: pm-chatbot
+        app.kubernetes.io/component: application
+        app.kubernetes.io/instance: pm-chatbot-instance
+        app.kubernetes.io/managed-by: kustomize
+        app.kubernetes.io/name: pm-chatbot
+        app.kubernetes.io/part-of: pm-chatbot
+        app.kubernetes.io/version: 1.0.0
+    spec:
+      containers:
+      # Streamlit container
+      - name: streamlit
+        image: quay.io/rh-ee-jashuang/pm-chatbot-streamlit:latest
+        ports:
+        - containerPort: 8501
+          name: streamlit-port
+        env:
+        - name: STREAMLIT_SERVER_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: pm-chatbot-config
+              key: STREAMLIT_SERVER_PORT
+        - name: STREAMLIT_SERVER_ADDRESS
+          valueFrom:
+            configMapKeyRef:
+              name: pm-chatbot-config
+              key: STREAMLIT_SERVER_ADDRESS
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: pm-chatbot-config
+              key: LOG_LEVEL
+        - name: DEFAULT_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: pm-chatbot-config
+              key: DEFAULT_MODEL
+        # LangChain optimizations
+        - name: LANGCHAIN_TRACING_V2
+          valueFrom:
+            configMapKeyRef:
+              name: pm-chatbot-config
+              key: LANGCHAIN_TRACING_V2
+        - name: LANGCHAIN_CALLBACKS_MANAGER
+          valueFrom:
+            configMapKeyRef:
+              name: pm-chatbot-config
+              key: LANGCHAIN_CALLBACKS_MANAGER
+
+        - name: JIRA_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: JIRA_URL
+        - name: JIRA_PERSONAL_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: JIRA_PERSONAL_TOKEN
+        
+        # MaaS Model Configurations
+        # DeepSeek R1 Qwen 14B
+        - name: MAAS_DEEPSEEK_R1_QWEN_14B_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-deepseek-r1-qwen-14b-api-key
+        - name: MAAS_DEEPSEEK_R1_QWEN_14B_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-deepseek-r1-qwen-14b-base-url
+        - name: MAAS_DEEPSEEK_R1_QWEN_14B_MODEL_NAME
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-deepseek-r1-qwen-14b-model-name
+        
+        # Phi-4
+        - name: MAAS_PHI_4_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-phi-4-api-key
+        - name: MAAS_PHI_4_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-phi-4-base-url
+        - name: MAAS_PHI_4_MODEL_NAME
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-phi-4-model-name
+        
+        # Granite 3.3 8B Instruct
+        - name: MAAS_GRANITE_3_3_8B_INSTRUCT_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-granite-3-3-8b-instruct-api-key
+        - name: MAAS_GRANITE_3_3_8B_INSTRUCT_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-granite-3-3-8b-instruct-base-url
+        - name: MAAS_GRANITE_3_3_8B_INSTRUCT_MODEL_NAME
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-granite-3-3-8b-instruct-model-name
+        
+        # Llama 4 Scout 17B
+        - name: MAAS_LLAMA_4_SCOUT_17B_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-llama-4-scout-17b-api-key
+        - name: MAAS_LLAMA_4_SCOUT_17B_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-llama-4-scout-17b-base-url
+        - name: MAAS_LLAMA_4_SCOUT_17B_MODEL_NAME
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-llama-4-scout-17b-model-name
+        
+        # Mistral Small 24B
+        - name: MAAS_MISTRAL_SMALL_24B_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-mistral-small-24b-api-key
+        - name: MAAS_MISTRAL_SMALL_24B_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-mistral-small-24b-base-url
+        - name: MAAS_MISTRAL_SMALL_24B_MODEL_NAME
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-mistral-small-24b-model-name
+        
+        # Container-specific LLM configuration
+        - name: DISABLE_SSL_VERIFICATION
+          value: "true"
+        - name: LLM_REQUEST_TIMEOUT
+          value: "120"
+        - name: LLM_MAX_RETRIES
+          value: "3"
+        
+        # Fix Streamlit file permission issues in containers
+        - name: STREAMLIT_CONFIG_DIR
+          value: "/tmp/.streamlit"
+        - name: STREAMLIT_CREDENTIALS_FILE
+          value: "/tmp/.streamlit/credentials.toml"
+        - name: STREAMLIT_CONFIG_FILE
+          value: "/tmp/.streamlit/config.toml"
+        - name: STREAMLIT_CACHE_DIR
+          value: "/tmp/.streamlit/cache"
+        
+        # Network and SSL fixes for enterprise environments
+        - name: PYTHONHTTPSVERIFY
+          value: "0"
+        - name: CURL_CA_BUNDLE
+          value: ""
+        - name: REQUESTS_CA_BUNDLE
+          value: ""
+        
+        # Hugging Face cache directory settings for OpenShift compatibility
+        - name: HF_HOME
+          value: "/tmp/.cache/huggingface"
+        - name: TRANSFORMERS_CACHE
+          value: "/tmp/.cache/huggingface/transformers"
+        - name: HF_DATASETS_CACHE
+          value: "/tmp/.cache/huggingface/datasets"
+        - name: SENTENCE_TRANSFORMERS_HOME
+          value: "/tmp/.cache/sentence_transformers"
+        - name: TORCH_HOME
+          value: "/tmp/.cache/torch"
+        # PyTorch CPU optimization settings
+        - name: CUDA_VISIBLE_DEVICES
+          value: ""
+        - name: TORCH_USE_CUDA_DSA
+          value: "false"
+        - name: PYTORCH_ENABLE_MPS_FALLBACK
+          value: "1"
+        resources:
+          requests:
+            memory: "1Gi"     # Increased for LangChain memory management
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        readinessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8501
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8501
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        volumeMounts:
+        - name: vector-db-storage
+          mountPath: /app/vector_db
+        - name: document-cache-storage
+          mountPath: /app/document_cache
+        - name: documents-storage
+          mountPath: /app/documents
+      volumes:
+      - name: vector-db-storage
+        persistentVolumeClaim:
+          claimName: pm-chatbot-data
+      - name: document-cache-storage
+        persistentVolumeClaim:
+          claimName: pm-chatbot-cache
+      - name: documents-storage
+        emptyDir: {} 

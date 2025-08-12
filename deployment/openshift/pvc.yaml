@@ -1,0 +1,30 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pm-chatbot-data
+  namespace: pm-chatbot
+  labels:
+    app: pm-chatbot
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: gp3-csi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pm-chatbot-cache
+  namespace: pm-chatbot
+  labels:
+    app: pm-chatbot
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: gp3-csi

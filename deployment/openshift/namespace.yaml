@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pm-chatbot
+  labels:
+    name: pm-chatbot
+    app: pm-chatbot 

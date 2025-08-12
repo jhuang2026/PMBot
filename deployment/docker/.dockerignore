@@ -1,0 +1,66 @@
+# Git files
+.git
+.gitignore
+.github
+
+# Documentation
+*.md
+docs/
+
+# Development files
+.vscode/
+.idea/
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+
+# Virtual environments  
+venv/
+env/
+.env
+.venv
+
+# Cache directories
+.cache/
+*.log
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# MacOS
+.DS_Store
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
+
+# Local config
+.env.local
+config.local.*
+
+# Node modules (if any)
+node_modules/
+
+# Test files
+tests/
+test_*
+*_test.py
+
+# Scripts (keep only what's needed)
+scripts/
+
+# Deployment configs (these will be copied by specific COPY commands)
+docker-compose*.yml
+Dockerfile*
+
+# Vector database files (if large)
+vector_db/faiss.index
+vector_db/documents.pkl 

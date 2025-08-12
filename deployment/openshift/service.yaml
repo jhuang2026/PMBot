@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: streamlit-service
+  namespace: pm-chatbot
+  labels:
+    app: pm-chatbot
+    component: streamlit
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8501
+    targetPort: 8501
+    protocol: TCP
+    name: streamlit
+  selector:
+    app: pm-chatbot 

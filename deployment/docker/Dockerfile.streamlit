@@ -1,0 +1,61 @@
+# Multi-stage build for better caching
+FROM python:3.11-slim as base
+
+# Install system dependencies in a separate layer
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Dependencies stage - this layer will be cached unless requirements change
+FROM base as dependencies
+WORKDIR /app
+
+# Copy only requirements files first (better caching)
+COPY config/requirements.txt .
+
+# Install Python dependencies (this layer will be cached)
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Final stage
+FROM dependencies as final
+WORKDIR /app
+
+# Create directories and user before copying code
+RUN useradd -m -u 1001 streamlit && \
+    mkdir -p /app/.cache/huggingface/transformers \
+             /app/.cache/huggingface/datasets \
+             /app/.cache/sentence_transformers \
+             /app/.cache/torch \
+             /app/vector_db \
+             /app/document_cache \
+             /tmp/.streamlit
+
+# Copy application files (this layer changes when code changes)
+COPY . .
+
+# Copy Streamlit configuration
+COPY .streamlit/config.toml /app/.streamlit/config.toml
+
+# Set ownership and ensure writable permissions for OpenShift
+# OpenShift runs containers with random UIDs in root group (gid=0)
+RUN chown -R streamlit:root /app /tmp/.streamlit && \
+    chmod -R 775 /app/vector_db /app/document_cache && \
+    chmod -R g+rwX /app/vector_db /app/document_cache
+USER streamlit
+
+# Set Streamlit configuration environment variables
+ENV STREAMLIT_CONFIG_DIR=/tmp/.streamlit
+ENV STREAMLIT_CREDENTIALS_FILE=/tmp/.streamlit/credentials.toml
+ENV STREAMLIT_CONFIG_FILE=/app/.streamlit/config.toml
+
+# Expose the port
+EXPOSE 8501
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8501/_stcore/health || exit 1
+
+# Command to run the application
+CMD ["streamlit", "run", "pm_chatbot_main.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", "--server.fileWatcherType=none", "--global.developmentMode=false", "--client.showErrorDetails=true"] 

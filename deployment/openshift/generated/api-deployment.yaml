@@ -1,0 +1,184 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pm-chatbot-api
+  namespace: pm-chatbot
+  labels:
+    app: pm-chatbot
+    version: v1
+    component: api
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: pm-chatbot
+      version: v1
+      component: api
+  template:
+    metadata:
+      labels:
+        app: pm-chatbot
+        version: v1
+        component: api
+    spec:
+      containers:
+      - name: api
+        image: quay.io/rh-ee-jashuang/pm-chatbot-api:latest
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: JIRA_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: jira-url
+        - name: JIRA_PERSONAL_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: jira-token
+        # MAAS Model Configurations - Multiple Models
+        - name: MAAS_DEEPSEEK_R1_QWEN_14B_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-deepseek-r1-qwen-14b-api-key
+        - name: MAAS_DEEPSEEK_R1_QWEN_14B_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-deepseek-r1-qwen-14b-base-url
+        - name: MAAS_DEEPSEEK_R1_QWEN_14B_MODEL_NAME
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-deepseek-r1-qwen-14b-model-name
+        - name: MAAS_PHI_4_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-phi-4-api-key
+        - name: MAAS_PHI_4_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-phi-4-base-url
+        - name: MAAS_PHI_4_MODEL_NAME
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-phi-4-model-name
+        - name: MAAS_GRANITE_3_3_8B_INSTRUCT_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-granite-3-3-8b-instruct-api-key
+        - name: MAAS_GRANITE_3_3_8B_INSTRUCT_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-granite-3-3-8b-instruct-base-url
+        - name: MAAS_GRANITE_3_3_8B_INSTRUCT_MODEL_NAME
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-granite-3-3-8b-instruct-model-name
+        - name: MAAS_LLAMA_4_SCOUT_17B_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-llama-4-scout-17b-api-key
+        - name: MAAS_LLAMA_4_SCOUT_17B_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-llama-4-scout-17b-base-url
+        - name: MAAS_LLAMA_4_SCOUT_17B_MODEL_NAME
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-llama-4-scout-17b-model-name
+        - name: MAAS_MISTRAL_SMALL_24B_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-mistral-small-24b-api-key
+        - name: MAAS_MISTRAL_SMALL_24B_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-mistral-small-24b-base-url
+        - name: MAAS_MISTRAL_SMALL_24B_MODEL_NAME
+          valueFrom:
+            secretKeyRef:
+              name: pm-chatbot-secrets
+              key: maas-mistral-small-24b-model-name
+        - name: ENVIRONMENT
+          value: "development"
+        - name: AUTH_METHOD
+          value: "simple"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pm-chatbot-api-service
+  namespace: pm-chatbot
+  labels:
+    app: pm-chatbot
+    version: v1
+    component: api
+spec:
+  selector:
+    app: pm-chatbot
+    version: v1
+    component: api
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: pm-chatbot-api-route
+  namespace: pm-chatbot
+  labels:
+    app: pm-chatbot
+    version: v1
+    component: api
+spec:
+  host: pm-chatbot-api.apps.cluster-xpqpd.xpqpd.sandbox272.opentlc.com
+  to:
+    kind: Service
+    name: pm-chatbot-api-service
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

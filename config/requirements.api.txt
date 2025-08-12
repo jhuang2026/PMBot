@@ -1,0 +1,19 @@
+# FastAPI API Server Requirements
+# Install these in addition to the main requirements.txt
+
+# Core FastAPI dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+
+# MCP Integration
+fastapi-mcp>=0.1.0
+
+# Authentication and security
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+
+# Additional utilities for API
+aiofiles
+httpx

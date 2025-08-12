@@ -1,0 +1,28 @@
+{
+  "created_at": "2025-07-31T00:11:14.431070",
+  "model_name": "all-MiniLM-L6-v2",
+  "total_documents": 12,
+  "total_chunks": 458,
+  "products": {
+    "general": {
+      "document_count": 5,
+      "chunk_count": 322
+    },
+    "inference_server": {
+      "document_count": 3,
+      "chunk_count": 80
+    },
+    "openshift_ai": {
+      "document_count": 2,
+      "chunk_count": 67
+    },
+    "enterrpise_linux_ai": {
+      "document_count": 2,
+      "chunk_count": 40
+    }
+  },
+  "last_updated": "2025-08-12T12:39:42.349865",
+  "removed_document": "Red Hat AI CY2026 Product Strategy - v 0.2.pdf",
+  "faiss_rebuilt": "2025-08-12T12:49:28.141017",
+  "faiss_vectors": 458
+}

@@ -1,0 +1,391 @@
+name: Build and Deploy to OpenShift
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'pm_chatbot_main.py'
+      - 'api_server.py'
+      - 'atlassian_client.py'
+      - 'auth.py'
+      - 'rfe_manager.py'
+      - 'vector_database.py'
+      - 'document_processor.py'
+      - 'config/requirements.txt'
+      - 'config/requirements.api.txt'
+      - 'deployment/docker/Dockerfile.streamlit'
+      - 'deployment/docker/Dockerfile.api'
+      - '.streamlit/**'
+      - 'deployment/openshift/**'
+      - '.github/workflows/**'
+      - 'documents/**'
+      - 'document_cache/**'
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  REGISTRY: quay.io
+  STREAMLIT_IMAGE_NAME: rh-ee-jashuang/pm-chatbot-streamlit
+  API_IMAGE_NAME: rh-ee-jashuang/pm-chatbot-api
+  OPENSHIFT_NAMESPACE: pm-chatbot
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        driver-opts: |
+          network=host
+          
+    - name: Enable BuildKit
+      run: |
+        echo "DOCKER_BUILDKIT=1" >> $GITHUB_ENV
+        echo "COMPOSE_DOCKER_CLI_BUILD=1" >> $GITHUB_ENV
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ secrets.QUAY_USERNAME }}
+        password: ${{ secrets.QUAY_PASSWORD }}
+
+    - name: Extract metadata for Streamlit
+      id: meta-streamlit
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.STREAMLIT_IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Extract metadata for API
+      id: meta-api
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.API_IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Streamlit Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./deployment/docker/Dockerfile.streamlit
+        push: true
+        tags: ${{ steps.meta-streamlit.outputs.tags }}
+        labels: ${{ steps.meta-streamlit.outputs.labels }}
+        cache-from: type=gha,scope=streamlit
+        cache-to: type=gha,mode=max,scope=streamlit
+        platforms: linux/amd64
+
+    - name: Build and push API Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./deployment/docker/Dockerfile.api
+        push: true
+        tags: ${{ steps.meta-api.outputs.tags }}
+        labels: ${{ steps.meta-api.outputs.labels }}
+        cache-from: type=gha,scope=api
+        cache-to: type=gha,mode=max,scope=api
+        platforms: linux/amd64
+
+    - name: Install OpenShift CLI
+      uses: redhat-actions/openshift-tools-installer@v1
+      with:
+        oc: 4
+
+    - name: Log in to OpenShift
+      uses: redhat-actions/oc-login@v1
+      with:
+        openshift_server_url: ${{ secrets.OPENSHIFT_SERVER }}
+        openshift_token: ${{ secrets.OPENSHIFT_TOKEN }}
+        insecure_skip_tls_verify: true
+
+    - name: Deploy to OpenShift
+      env:
+        JIRA_PERSONAL_TOKEN: ${{ secrets.JIRA_PERSONAL_TOKEN }}
+      run: |
+        echo "🚀 Deploying to OpenShift namespace: ${{ env.OPENSHIFT_NAMESPACE }}"
+        
+        # Update routes for current cluster domain
+        echo "🌐 Updating routes for current cluster..."
+        CURRENT_SERVER="${{ secrets.OPENSHIFT_SERVER }}"
+        CLUSTER_DOMAIN=$(echo "$CURRENT_SERVER" | sed 's|https://api\.|apps.|' | sed 's|:6443||')
+        echo "Cluster domain: $CLUSTER_DOMAIN"
+        
+        # Update route hostnames
+        sed -i "s|host: pm-chatbot\.apps\..*|host: pm-chatbot.$CLUSTER_DOMAIN|" deployment/openshift/route.yaml
+        sed -i "s|host: pm-chatbot-api\.apps\..*|host: pm-chatbot-api.$CLUSTER_DOMAIN|" deployment/openshift/route-api.yaml
+        
+        # Apply all configuration files
+        oc apply -f deployment/openshift/namespace.yaml || true
+        oc apply -f deployment/openshift/configmap.yaml || true
+        oc apply -f deployment/openshift/service.yaml || true
+        oc apply -f deployment/openshift/service-api.yaml || true
+        oc apply -f deployment/openshift/route.yaml || true
+        oc apply -f deployment/openshift/route-api.yaml || true
+        
+        # Create/Update MaaS Secrets for RFE Generation
+        echo "🔐 Setting up MaaS model secrets for RFE generation..."
+        
+        # Preserve existing JIRA token if available
+        EXISTING_JIRA_TOKEN=$(oc get secret pm-chatbot-secrets -n ${{ env.OPENSHIFT_NAMESPACE }} -o jsonpath='{.data.JIRA_PERSONAL_TOKEN}' 2>/dev/null || echo "")
+        
+        # Create secret using GitHub Secrets (secure approach)
+        cat > temp-maas-secret.yaml << EOF
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: pm-chatbot-secrets
+          namespace: ${{ env.OPENSHIFT_NAMESPACE }}
+          labels:
+            app.kubernetes.io/component: application
+            app.kubernetes.io/instance: pm-chatbot-instance
+            app.kubernetes.io/managed-by: kustomize
+            app.kubernetes.io/name: pm-chatbot
+            app.kubernetes.io/part-of: pm-chatbot
+            app.kubernetes.io/version: 1.0.0
+        type: Opaque
+        data:
+          # JIRA Configuration
+          JIRA_URL: $(echo -n "${{ secrets.JIRA_URL }}" | base64 -w 0)
+          # MaaS Model: deepseek-r1-qwen-14b
+          maas-deepseek-r1-qwen-14b-api-key: $(echo -n "${{ secrets.MAAS_DEEPSEEK_R1_QWEN_14B_API_KEY }}" | base64 -w 0)
+          maas-deepseek-r1-qwen-14b-base-url: $(echo -n "${{ secrets.MAAS_DEEPSEEK_R1_QWEN_14B_BASE_URL }}" | base64 -w 0)
+          maas-deepseek-r1-qwen-14b-model-name: $(echo -n "${{ secrets.MAAS_DEEPSEEK_R1_QWEN_14B_MODEL_NAME }}" | base64 -w 0)
+          # MaaS Model: phi-4
+          maas-phi-4-api-key: $(echo -n "${{ secrets.MAAS_PHI_4_API_KEY }}" | base64 -w 0)
+          maas-phi-4-base-url: $(echo -n "${{ secrets.MAAS_PHI_4_BASE_URL }}" | base64 -w 0)
+          maas-phi-4-model-name: $(echo -n "${{ secrets.MAAS_PHI_4_MODEL_NAME }}" | base64 -w 0)
+          # MaaS Model: granite-3-3-8b-instruct
+          maas-granite-3-3-8b-instruct-api-key: $(echo -n "${{ secrets.MAAS_GRANITE_3_3_8B_INSTRUCT_API_KEY }}" | base64 -w 0)
+          maas-granite-3-3-8b-instruct-base-url: $(echo -n "${{ secrets.MAAS_GRANITE_3_3_8B_INSTRUCT_BASE_URL }}" | base64 -w 0)
+          maas-granite-3-3-8b-instruct-model-name: $(echo -n "${{ secrets.MAAS_GRANITE_3_3_8B_INSTRUCT_MODEL_NAME }}" | base64 -w 0)
+          # MaaS Model: llama-4-scout-17b
+          maas-llama-4-scout-17b-api-key: $(echo -n "${{ secrets.MAAS_LLAMA_4_SCOUT_17B_API_KEY }}" | base64 -w 0)
+          maas-llama-4-scout-17b-base-url: $(echo -n "${{ secrets.MAAS_LLAMA_4_SCOUT_17B_BASE_URL }}" | base64 -w 0)
+          maas-llama-4-scout-17b-model-name: $(echo -n "${{ secrets.MAAS_LLAMA_4_SCOUT_17B_MODEL_NAME }}" | base64 -w 0)
+          # MaaS Model: mistral-small-24b
+          maas-mistral-small-24b-api-key: $(echo -n "${{ secrets.MAAS_MISTRAL_SMALL_24B_API_KEY }}" | base64 -w 0)
+          maas-mistral-small-24b-base-url: $(echo -n "${{ secrets.MAAS_MISTRAL_SMALL_24B_BASE_URL }}" | base64 -w 0)
+          maas-mistral-small-24b-model-name: $(echo -n "${{ secrets.MAAS_MISTRAL_SMALL_24B_MODEL_NAME }}" | base64 -w 0)
+        EOF
+        
+        # Add JIRA token to secret (use GitHub secret or preserve existing)
+        if [ -n "$JIRA_PERSONAL_TOKEN" ]; then
+          JIRA_TOKEN_B64=$(echo -n "$JIRA_PERSONAL_TOKEN" | base64 -w 0)
+          echo "  JIRA_PERSONAL_TOKEN: $JIRA_TOKEN_B64" >> temp-maas-secret.yaml
+          echo "✅ Using JIRA token from GitHub secrets"
+        elif [ -n "$EXISTING_JIRA_TOKEN" ]; then
+          echo "  JIRA_PERSONAL_TOKEN: $EXISTING_JIRA_TOKEN" >> temp-maas-secret.yaml
+          echo "✅ Preserved existing JIRA token"
+        else
+          echo "⚠️ No JIRA token found - add JIRA_PERSONAL_TOKEN to GitHub secrets"
+          echo "  # JIRA_PERSONAL_TOKEN: <add-to-github-secrets>" >> temp-maas-secret.yaml
+        fi
+        
+        # Apply the secret
+        oc apply -f temp-maas-secret.yaml
+        rm temp-maas-secret.yaml
+        
+        echo "✅ MaaS secrets configured successfully!"
+        
+        # Extract SHA-based image tags for deployment
+        echo "🏷️ Extracting SHA-based image tags..."
+        STREAMLIT_SHA_TAG=$(echo "${{ steps.meta-streamlit.outputs.tags }}" | grep "master-" | head -1)
+        API_SHA_TAG=$(echo "${{ steps.meta-api.outputs.tags }}" | grep "master-" | head -1)
+        
+        echo "Streamlit SHA tag: $STREAMLIT_SHA_TAG"
+        echo "API SHA tag: $API_SHA_TAG"
+        
+        # Create temporary deployment files with SHA-based tags
+        echo "🔄 Updating deployment configs with SHA-based image tags..."
+        
+        # Update Streamlit deployment
+        cp deployment/openshift/deployment.yaml temp-deployment-streamlit.yaml
+        sed -i "s|quay.io/rh-ee-jashuang/pm-chatbot-streamlit:latest|$STREAMLIT_SHA_TAG|g" temp-deployment-streamlit.yaml
+        
+        # Update API deployment  
+        cp deployment/openshift/deployment-api.yaml temp-deployment-api.yaml
+        sed -i "s|quay.io/rh-ee-jashuang/pm-chatbot-api:latest|$API_SHA_TAG|g" temp-deployment-api.yaml
+        
+        # Deploy/Update Streamlit with SHA tag
+        if oc get deployment pm-chatbot-deployment -n ${{ env.OPENSHIFT_NAMESPACE }} &> /dev/null; then
+          echo "📦 Updating existing Streamlit deployment with SHA-tagged image..."
+          oc apply -f temp-deployment-streamlit.yaml -n ${{ env.OPENSHIFT_NAMESPACE }}
+        else
+          echo "📦 Creating new Streamlit deployment with SHA-tagged image..."
+          oc apply -f temp-deployment-streamlit.yaml -n ${{ env.OPENSHIFT_NAMESPACE }}
+        fi
+        
+        # Deploy/Update API with SHA tag
+        if oc get deployment pm-chatbot-api -n ${{ env.OPENSHIFT_NAMESPACE }} &> /dev/null; then
+          echo "🔧 Updating existing API deployment with SHA-tagged image..."
+          oc apply -f temp-deployment-api.yaml -n ${{ env.OPENSHIFT_NAMESPACE }}
+        else
+          echo "🔧 Creating new API deployment with SHA-tagged image..."
+          oc apply -f temp-deployment-api.yaml -n ${{ env.OPENSHIFT_NAMESPACE }}
+        fi
+        
+        # Cleanup temporary files
+        rm temp-deployment-streamlit.yaml temp-deployment-api.yaml
+        
+        # Wait for rollouts to complete
+        echo "⏳ Waiting for Streamlit deployment to complete..."
+        if ! oc rollout status deployment/pm-chatbot-deployment -n ${{ env.OPENSHIFT_NAMESPACE }} --timeout=900s; then
+          echo "❌ Streamlit deployment failed or timed out."
+          exit 1
+        fi
+        
+        echo "⏳ Waiting for API deployment to complete..."
+        if ! oc rollout status deployment/pm-chatbot-api -n ${{ env.OPENSHIFT_NAMESPACE }} --timeout=900s; then
+          echo "❌ API deployment failed or timed out."
+          exit 1
+        fi
+        
+        # Get deployment info
+        echo "✅ Both deployments completed successfully!"
+        oc get pods -n ${{ env.OPENSHIFT_NAMESPACE }}
+        
+        # Get route URLs
+        STREAMLIT_URL=$(oc get route pm-chatbot-route -n ${{ env.OPENSHIFT_NAMESPACE }} -o jsonpath='{.spec.host}' 2>/dev/null || echo "No route found")
+        API_URL=$(oc get route pm-chatbot-api-route -n ${{ env.OPENSHIFT_NAMESPACE }} -o jsonpath='{.spec.host}' 2>/dev/null || echo "No route found")
+        
+        if [ "$STREAMLIT_URL" != "No route found" ]; then
+          echo "🌐 Streamlit URL: https://$STREAMLIT_URL"
+        fi
+        if [ "$API_URL" != "No route found" ]; then
+          echo "🔧 API URL: https://$API_URL"
+          echo "📚 API Docs: https://$API_URL/docs"
+        fi
+
+    - name: Check deployment health
+      run: |
+        echo "🔍 Checking deployment health..."
+        
+        # Check pod status
+        oc get pods -n ${{ env.OPENSHIFT_NAMESPACE }} -l app=pm-chatbot
+        
+        # Check Streamlit logs
+        echo "📋 Streamlit logs:"
+        oc logs deployment/pm-chatbot-deployment -n ${{ env.OPENSHIFT_NAMESPACE }} --tail=20 || true
+        
+        # Check API logs
+        echo "📋 API logs:"
+        oc logs deployment/pm-chatbot-api -n ${{ env.OPENSHIFT_NAMESPACE }} --tail=20 || true
+        
+        # Check for successful initialization
+        if oc logs deployment/pm-chatbot-deployment -n ${{ env.OPENSHIFT_NAMESPACE }} --tail=50 | grep -q "Initialized MaaS client"; then
+          echo "✅ Streamlit MaaS client initialized successfully"
+        else
+          echo "⚠️ Streamlit MaaS client initialization not detected in logs"
+        fi
+        
+        if oc logs deployment/pm-chatbot-api -n ${{ env.OPENSHIFT_NAMESPACE }} --tail=50 | grep -q "Application startup complete"; then
+          echo "✅ API server started successfully"
+        else
+          echo "⚠️ API server startup not detected in logs"
+        fi
+
+    - name: Upload RAG Cache to Deployment
+      run: |
+        echo "📦 Uploading pre-built RAG cache to deployment..."
+        
+        # Wait for Streamlit pod to be ready
+        echo "⏳ Waiting for Streamlit pod to be ready..."
+        oc wait --for=condition=ready pod -l app=pm-chatbot -l app.kubernetes.io/component=application -n ${{ env.OPENSHIFT_NAMESPACE }} --timeout=300s
+        
+        # Get the running Streamlit pod
+        STREAMLIT_POD=$(oc get pods -n ${{ env.OPENSHIFT_NAMESPACE }} -l "app=pm-chatbot" -l "app.kubernetes.io/component=application" -o jsonpath='{.items[0].metadata.name}')
+        echo "📦 Found Streamlit pod: $STREAMLIT_POD"
+        
+        # Check if document cache exists in repo
+        if [ -d "./document_cache" ] && [ "$(ls -A ./document_cache)" ]; then
+          echo "📋 Uploading document cache..."
+          oc cp ./document_cache/. ${{ env.OPENSHIFT_NAMESPACE }}/$STREAMLIT_POD:/app/document_cache/
+          echo "✅ Document cache uploaded successfully"
+        else
+          echo "⚠️ Document cache not found in repo - will be built automatically"
+        fi
+        
+        # Check if vector database exists in repo
+        if [ -d "./vector_db" ] && [ -f "./vector_db/metadata.json" ]; then
+          echo "📋 Uploading vector database..."
+          oc cp ./vector_db/. ${{ env.OPENSHIFT_NAMESPACE }}/$STREAMLIT_POD:/app/vector_db/
+          echo "✅ Vector database uploaded successfully"
+          
+          # Display uploaded cache stats
+          echo "📊 Uploaded cache stats:"
+          oc exec $STREAMLIT_POD -n ${{ env.OPENSHIFT_NAMESPACE }} -- cat /app/vector_db/metadata.json | grep -E '"total_documents"|"total_chunks"' || echo "Stats not available"
+        else
+          echo "⚠️ Vector database not found in repo - will be built automatically"
+        fi
+        
+        # Restart Streamlit pod to load the cache
+        echo "🔄 Restarting Streamlit to load uploaded cache..."
+        oc delete pod $STREAMLIT_POD -n ${{ env.OPENSHIFT_NAMESPACE }}
+        
+        # Wait for new pod to be ready
+        echo "⏳ Waiting for restarted pod to be ready..."
+        oc wait --for=condition=ready pod -l app=pm-chatbot -l app.kubernetes.io/component=application -n ${{ env.OPENSHIFT_NAMESPACE }} --timeout=300s
+        
+        echo "✅ RAG cache upload completed!"
+
+    - name: Comment PR with deployment info
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: streamlitRoute } = await exec.getExecOutput('oc', [
+            'get', 'route', 'pm-chatbot-route', 
+            '-n', '${{ env.OPENSHIFT_NAMESPACE }}',
+            '-o', 'jsonpath={.spec.host}'
+          ], { ignoreReturnCode: true });
+          
+          const { data: apiRoute } = await exec.getExecOutput('oc', [
+            'get', 'route', 'pm-chatbot-api-route', 
+            '-n', '${{ env.OPENSHIFT_NAMESPACE }}',
+            '-o', 'jsonpath={.spec.host}'
+          ], { ignoreReturnCode: true });
+          
+          const streamlitUrl = streamlitRoute.stdout ? `https://${streamlitRoute.stdout}` : 'Route not found';
+          const apiUrl = apiRoute.stdout ? `https://${apiRoute.stdout}` : 'Route not found';
+          const apiDocsUrl = apiRoute.stdout ? `https://${apiRoute.stdout}/docs` : 'Route not found';
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `🚀 **Deployment Complete!**
+            
+            **Images:**
+            - Streamlit: \`${{ env.REGISTRY }}/${{ env.STREAMLIT_IMAGE_NAME }}:latest\`
+            - API: \`${{ env.REGISTRY }}/${{ env.API_IMAGE_NAME }}:latest\`
+            
+            **Namespace:** \`${{ env.OPENSHIFT_NAMESPACE }}\`
+            
+            **URLs:**
+            - 🌐 **Streamlit App:** ${streamlitUrl}
+            - 🔧 **API Server:** ${apiUrl}  
+            - 📚 **API Docs:** ${apiDocsUrl}
+            - 🤖 **MCP Endpoint:** ${apiUrl}/mcp
+            
+            Check the [Actions tab](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for detailed logs.`
+          }); # Last updated: Fri Aug  1 19:31:03 EDT 2025
+# Last updated: Fri Aug  1 20:59:30 EDT 2025
+# Last updated: Sat Aug  2 21:17:45 EDT 2025
+# Last updated: Sat Aug  2 21:30:19 EDT 2025
+# Last updated: Sat Aug  2 22:23:13 EDT 2025
+# Last updated: Tue Aug  5 11:18:24 EDT 2025
